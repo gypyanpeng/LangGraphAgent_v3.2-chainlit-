@@ -1,0 +1,51 @@
+{
+  "persistence": {
+    "enabled": true,
+    "backend": "sqlite",
+    "config": {
+      "sqlite": {
+        "database_path": "./data/agent_memory.db",
+        "connection_options": {
+          "check_same_thread": false,
+          "timeout": 30
+        }
+      },
+      "memory": {
+        "description": "In-memory storage, data will be lost on restart"
+      },
+      "postgresql": {
+        "host": "localhost",
+        "port": 5432,
+        "database": "langgraph_agent",
+        "username": "postgres",
+        "password": "",
+        "connection_string": "postgresql://postgres:@localhost:5432/langgraph_agent"
+      }
+    }
+  },
+  "session_management": {
+    "default_user_prefix": "default_user",
+    "session_timeout_hours": 24,
+    "max_sessions_per_user": 10,
+    "auto_cleanup_enabled": true
+  },
+  "memory_settings": {
+    "short_term_memory": {
+      "enabled": true,
+      "description": "使用 LangGraph 检查点机制作为短期记忆",
+      "max_messages_per_session": 1000
+    },
+    "long_term_memory": {
+      "enabled": false,
+      "description": "长期记忆功能（可选，使用 LangGraph Store 机制）",
+      "storage_backend": "sqlite",
+      "retention_days": 365
+    }
+  },
+  "backup_settings": {
+    "enabled": false,
+    "backup_interval_hours": 24,
+    "backup_location": "./backups/",
+    "max_backup_files": 7
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "models": {
+    "zhipu": {
+      "provider": "zhipu",
+      "api_key": "6c248cafe25a4f86a30af29b452313ff.Qg5UxwrJw0Ajy722",
+      "base_url": "https://open.bigmodel.cn/api/paas/v4/",
+      "model_name": "GLM-4-Flash",
+      "description": "智谱 GLM-4-Flash 模型"
+    },
+    "modelscope": {
+      "provider": "modelscope",
+      "api_key": "bd8a6950-d161-4084-abb8-861bf91f8f00",
+      "base_url": "https://api-inference.modelscope.cn/v1/",
+      "model_name": "Qwen/Qwen3-32B",
+      "description": "ModelScope Qwen 模型"
+    },
+    "ollama": {
+      "provider": "ollama",
+      "api_key": "ollama",
+      "base_url": "http://localhost:11434/v1",
+      "model_name": "qwen3:1.7b",
+      "description": "本地 Ollama 模型"
+    }
+  },
+  "default_provider": "modelscope"
+}
