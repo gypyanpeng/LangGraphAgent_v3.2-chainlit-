@@ -2,21 +2,21 @@
   "models": {
     "zhipu": {
       "provider": "zhipu",
-      "api_key": "6c248cafe25a4f86a30af29b452313ff.Qg5UxwrJw0Ajy722",
+      "api_key": "your_zhipu_key",
       "base_url": "https://open.bigmodel.cn/api/paas/v4/",
       "model_name": "GLM-4-Flash",
       "description": "智谱 GLM-4-Flash 模型"
     },
     "modelscope": {
       "provider": "modelscope",
-      "api_key": "bd8a6950-d161-4084-abb8-861bf91f8f00",
+      "api_key": "your_modelscope_key",
       "base_url": "https://api-inference.modelscope.cn/v1/",
       "model_name": "Qwen/Qwen3-32B",
       "description": "ModelScope Qwen 模型"
     },
     "openai": {
       "provider": "openai",
-      "api_key": "sk-111111111111111111111111111111111",
+      "api_key": "your_openai_key",
       "base_url": "https://api.openai.com/v1",
       "model_name": "gpt-3.5-turbo",
       "description": "OpenAI GPT-3.5 模型"

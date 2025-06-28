@@ -1,16 +1,31 @@
 {
-    "mcpServers": {
-      "sequential-thinking": {
-        "command": "npx",
-        "args": [
-          "-y",
-          "@modelcontextprotocol/server-sequential-thinking"
-        ],
-        "transport": "stdio"
+  "mcpServers": {
+    "sequential-thinking": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-sequential-thinking"
+      ],
+      "transport": "stdio"
+    },
+    "tavily": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "tavily-mcp@0.2.4"
+      ],
+      "env": {
+        "TAVILY_API_KEY": "your_tavily_key"
       },
-     "mcp-server-chart": {
-       "transport": "sse",
-       "url": "https://mcp.api-inference.modelscope.net/06b0207b1f9b4c/sse"
-       }
+      "transport": "stdio"
+    },
+   "mcp-server-chart": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@antv/mcp-server-chart"
+      ],
+      "transport": "stdio"
     }
+  }
 }
