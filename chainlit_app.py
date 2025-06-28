@@ -5,7 +5,77 @@ Chainlit Web 前端集成 - 符合官方最佳实践，支持历史会话恢复
 
 import os
 import asyncio
+import logging
 from typing import Optional
+
+# 配置详细日志
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+
+async def generate_thread_name(message_content: str) -> str:
+    """
+    基于用户的第一条消息生成智能会话名称
+    """
+    # 清理消息内容
+    content = message_content.strip()
+
+    # 如果消息太短，使用默认格式
+    if len(content) < 5:
+        from datetime import datetime
+        return f"对话 {datetime.now().strftime('%m-%d %H:%M')}"
+
+    # 截取前30个字符作为标题，确保不会太长
+    if len(content) > 30:
+        title = content[:27] + "..."
+    else:
+        title = content
+
+    # 移除换行符和多余空格
+    title = " ".join(title.split())
+
+    # 如果是问号结尾，保留问号
+    if content.endswith('?') and not title.endswith('?'):
+        title = title.rstrip('.') + '?'
+
+    return title
+
+
+async def update_thread_name_if_needed(session_id: str, message_content: str, current_user=None):
+    """
+    检查并更新线程名称（仅在第一条消息后）
+    """
+    try:
+        # 获取数据层实例
+        data_layer = cl.user_session.get("data_layer")
+        if not data_layer:
+            from sqlite_data_layer import SQLiteDataLayer
+            data_layer = SQLiteDataLayer()
+            cl.user_session.set("data_layer", data_layer)
+
+        # 获取当前线程信息
+        thread = await data_layer.get_thread(session_id)
+        if not thread:
+            logger.warning(f"⚠️ 未找到线程: {session_id}")
+            return
+
+        # 检查线程是否已有名称（不是 None 或空字符串）
+        if thread.get("name"):
+            logger.info(f"🏷️ 线程已有名称，跳过更新: {thread['name']}")
+            return
+
+        # 生成智能名称
+        new_name = await generate_thread_name(message_content)
+
+        # 更新线程名称
+        await data_layer.update_thread(session_id, name=new_name)
+        logger.info(f"✅ 线程名称已更新: {session_id} -> '{new_name}'")
+
+    except Exception as e:
+        logger.error(f"❌ 更新线程名称失败: {str(e)}")
+
+
+logger = logging.getLogger(__name__)
 
 # 禁用 LangSmith 追踪以避免错误
 os.environ["LANGCHAIN_TRACING_V2"] = "false"
@@ -22,148 +92,41 @@ from chainlit.types import ThreadDict
 from main import initialize_agent
 
 # 配置 Chainlit 数据层（用于历史会话显示）
-from chainlit.data.sql_alchemy import SQLAlchemyDataLayer
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlite_data_layer import SQLiteDataLayer
 import asyncio
 
-def init_database_sync():
-    """同步方式初始化数据库表（在模块导入时调用）"""
-    try:
-        # 确保数据目录存在
-        os.makedirs("./data", exist_ok=True)
-
-        # 使用同步SQLite连接进行初始化
-        import sqlite3
-
-        db_path = "./data/chainlit_history.db"
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-
-        # 检查 users 表是否存在
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
-        if not cursor.fetchone():
-            print("🔧 正在初始化 Chainlit 数据库表...")
-
-            # 创建表的 SQL
-            create_tables_sql = [
-                """CREATE TABLE IF NOT EXISTS users (
-                    id TEXT PRIMARY KEY,
-                    identifier TEXT NOT NULL UNIQUE,
-                    metadata TEXT NOT NULL,
-                    createdAt TEXT
-                )""",
-                """CREATE TABLE IF NOT EXISTS threads (
-                    id TEXT PRIMARY KEY,
-                    createdAt TEXT,
-                    name TEXT,
-                    userId TEXT,
-                    userIdentifier TEXT,
-                    tags TEXT,
-                    metadata TEXT,
-                    FOREIGN KEY (userId) REFERENCES users(id)
-                )""",
-                """CREATE TABLE IF NOT EXISTS steps (
-                    id TEXT PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    type TEXT NOT NULL,
-                    threadId TEXT NOT NULL,
-                    parentId TEXT,
-                    disableFeedback INTEGER DEFAULT 0,
-                    streaming INTEGER DEFAULT 0,
-                    waitForAnswer INTEGER DEFAULT 0,
-                    isError INTEGER DEFAULT 0,
-                    metadata TEXT,
-                    tags TEXT,
-                    input TEXT,
-                    output TEXT,
-                    createdAt TEXT NOT NULL,
-                    command TEXT,
-                    start TEXT,
-                    end TEXT,
-                    generation TEXT,
-                    showInput TEXT,
-                    language TEXT,
-                    indent INTEGER DEFAULT 0,
-                    defaultOpen INTEGER DEFAULT 0,
-                    FOREIGN KEY (threadId) REFERENCES threads(id)
-                )""",
-                """CREATE TABLE IF NOT EXISTS elements (
-                    id TEXT PRIMARY KEY,
-                    threadId TEXT,
-                    stepId TEXT,
-                    name TEXT NOT NULL,
-                    type TEXT NOT NULL,
-                    url TEXT,
-                    objectKey TEXT,
-                    size TEXT,
-                    page INTEGER,
-                    language TEXT,
-                    forId TEXT,
-                    mime TEXT,
-                    chainlitKey TEXT,
-                    display TEXT,
-                    props TEXT,
-                    FOREIGN KEY (threadId) REFERENCES threads(id),
-                    FOREIGN KEY (stepId) REFERENCES steps(id)
-                )""",
-                """CREATE TABLE IF NOT EXISTS feedbacks (
-                    id TEXT PRIMARY KEY,
-                    forId TEXT NOT NULL,
-                    threadId TEXT NOT NULL,
-                    value INTEGER NOT NULL,
-                    comment TEXT,
-                    FOREIGN KEY (threadId) REFERENCES threads(id)
-                )"""
-            ]
-
-            # 执行创建表的 SQL
-            for sql in create_tables_sql:
-                cursor.execute(sql)
-
-            conn.commit()
-            print("✅ Chainlit 数据库表初始化完成")
-        else:
-            print("✅ Chainlit 数据库表已存在")
-
-        conn.close()
-
-    except Exception as e:
-        print(f"⚠️ 数据库初始化警告: {e}")
-
-# 在模块导入时初始化数据库
-init_database_sync()
-
-async def init_database_if_needed():
-    """数据库已在模块导入时初始化，此函数保留用于兼容性"""
-    pass
+# 数据库初始化现在由 SQLiteDataLayer 处理
 
 @cl.data_layer
 def get_data_layer():
     """配置 Chainlit 数据层以支持历史会话显示"""
-    # 注意：不使用 storage_provider 意味着元素（如图片、文件）不会被持久化
-    # 但基本的聊天历史功能仍然可以工作
-    return SQLAlchemyDataLayer(
-        conninfo="sqlite+aiosqlite:///./data/chainlit_history.db",
-        storage_provider=None  # 本地开发暂不使用存储提供商
-    )
+    # 使用自定义的 SQLite 数据层，解决数组类型兼容性问题
+    return SQLiteDataLayer(db_path="./data/chainlit_history.db")
 
 # 配置简单的密码身份验证
 @cl.password_auth_callback
 async def auth_callback(username: str, password: str):
-    """简单的密码身份验证"""
+    """简单的密码身份验证 - 带详细调试日志"""
+    logger.info(f"🔐 AUTH_CALLBACK 被调用！用户名: {username}")
+
     # 简单的用户验证（生产环境请使用更安全的方式）
     if username == "admin" and password == "admin123":
-        return cl.User(
+        user = cl.User(
             identifier="admin",
             display_name="管理员"
         )
+        logger.info(f"✅ 身份验证成功！用户: {user.identifier}, 显示名: {user.display_name}")
+        return user
     elif username == "user" and password == "user123":
-        return cl.User(
+        user = cl.User(
             identifier="user",
             display_name="用户"
         )
-    return None
+        logger.info(f"✅ 身份验证成功！用户: {user.identifier}, 显示名: {user.display_name}")
+        return user
+    else:
+        logger.warning(f"❌ 身份验证失败！用户名: {username}")
+        return None
 
 
 @cl.on_chat_start
@@ -172,8 +135,44 @@ async def on_chat_start():
     Chainlit 会话开始时初始化 Agent
     """
     try:
-        # 确保数据库已初始化
-        await init_database_if_needed()
+        # 检查用户身份验证状态
+        current_user = cl.user_session.get("user")
+        session_id = cl.context.session.id
+        logger.info(f"🚀 CHAT_START 被调用！会话ID: {session_id}")
+        logger.info(f"👤 当前用户: {current_user.identifier if current_user else 'None'}")
+
+        if not current_user:
+            logger.warning(f"⚠️ 会话开始时未找到用户信息！会话ID: {session_id}")
+
+        # 创建新的线程记录
+        if current_user:
+            from datetime import datetime, timezone
+            from chainlit.types import ThreadDict
+            thread_data: ThreadDict = {
+                "id": session_id,
+                "createdAt": datetime.now(timezone.utc).isoformat(),
+                "name": None,  # 初始时没有名称，会在第一条消息后更新
+                "userId": current_user.id,
+                "userIdentifier": current_user.identifier,
+                "tags": [],
+                "metadata": {},
+                "steps": [],  # 新线程开始时没有步骤
+                "elements": []  # 新线程开始时没有元素
+            }
+
+            # 获取数据层实例并创建线程
+            data_layer = cl.user_session.get("data_layer")
+            if not data_layer:
+                # 如果没有数据层实例，创建一个新的
+                from sqlite_data_layer import SQLiteDataLayer
+                data_layer = SQLiteDataLayer()
+                cl.user_session.set("data_layer", data_layer)
+
+            # 创建线程记录
+            await data_layer.create_thread(thread_data)
+            logger.info(f"✅ 新线程已创建: {session_id}")
+
+        # 数据库初始化由 SQLiteDataLayer 自动处理
 
         # 初始化 Agent
         app, tools, session_manager = await initialize_agent()
@@ -185,10 +184,11 @@ async def on_chat_start():
 
         # 发送欢迎消息
         await cl.Message(
-            content="🤖 **LangGraph Agent 已启动！**\n\n我可以帮您处理各种任务，包括：\n- 🔍 网络搜索和信息检索\n- 🧠 复杂逻辑推理和分析\n- 📊 数据可视化和图表生成\n- 💻 代码编写和技术支持\n- 🌐 网页自动化操作\n\n请告诉我您需要什么帮助？"
+            content="🤖 **LangGraph Agent 已启动！**\n\n我可以帮您处理各种任务，包括：\n- 🔍 网络搜索和信息检索\n- 🧠 复杂逻辑推理和分析\n- 📊 数据可视化和图表生成\n\n请告诉我您需要什么帮助？"
         ).send()
 
     except Exception as e:
+        logger.error(f"❌ 初始化失败: {str(e)}")
         await cl.Message(
             content=f"❌ **初始化失败**: {str(e)}\n\n请检查配置文件并重试。"
         ).send()
@@ -200,6 +200,16 @@ async def on_chat_resume(thread: ThreadDict):
     恢复历史会话 - 按照 Chainlit 官方文档实现
     """
     try:
+        # 检查用户身份验证状态
+        current_user = cl.user_session.get("user")
+        session_id = cl.context.session.id
+        thread_id = thread.get("id", "unknown")
+        logger.info(f"🔄 CHAT_RESUME 被调用！会话ID: {session_id}, 线程ID: {thread_id}")
+        logger.info(f"👤 当前用户: {current_user.identifier if current_user else 'None'}")
+
+        if not current_user:
+            logger.warning(f"⚠️ 恢复会话时未找到用户信息！会话ID: {session_id}")
+
         # 重新初始化 Agent
         app, tools, session_manager = await initialize_agent()
 
@@ -217,6 +227,7 @@ async def on_chat_resume(thread: ThreadDict):
         ).send()
 
     except Exception as e:
+        logger.error(f"❌ 恢复会话失败: {str(e)}")
         await cl.Message(
             content=f"❌ **恢复会话失败**: {str(e)}\n\n将创建新的会话。"
         ).send()
@@ -229,11 +240,25 @@ async def on_message(message: cl.Message):
     """
     处理用户消息 - 符合 Chainlit 官方最佳实践
     """
+    # 检查用户身份验证状态
+    current_user = cl.user_session.get("user")
+    session_id = cl.context.session.id
+    logger.info(f"💬 MESSAGE 被调用！会话ID: {session_id}, 消息: {message.content[:50]}...")
+    logger.info(f"👤 当前用户: {current_user.identifier if current_user else 'None'}")
+
+    if not current_user:
+        logger.warning(f"⚠️ 处理消息时未找到用户信息！会话ID: {session_id}")
+        await cl.Message(
+            content="❌ **用户未认证**\n\n请重新登录。"
+        ).send()
+        return
+
     # 从用户会话中获取 Agent 相关对象
     app = cl.user_session.get("app")
     session_manager = cl.user_session.get("session_manager")
-    
+
     if not app or not session_manager:
+        logger.error(f"❌ Agent 未正确初始化！会话ID: {session_id}")
         await cl.Message(
             content="❌ **Agent 未正确初始化**\n\n请刷新页面重试。"
         ).send()
@@ -267,7 +292,10 @@ async def on_message(message: cl.Message):
         
         # 发送最终消息
         await final_answer.send()
-        
+
+        # 检查是否需要更新线程名称（仅在第一条消息后）
+        await update_thread_name_if_needed(session_id, message.content, current_user)
+
     except Exception as e:
         await cl.Message(
             content=f"❌ **处理消息时出错**: {str(e)}\n\n请重试或联系管理员。"
