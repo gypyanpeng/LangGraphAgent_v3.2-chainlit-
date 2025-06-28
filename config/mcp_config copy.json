@@ -8,6 +8,17 @@
         ],
         "transport": "stdio"
       },
+      "tavily": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "tavily-mcp@0.2.4"
+        ],
+        "env": {
+          "TAVILY_API_KEY": "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"
+        },
+        "transport": "stdio"
+      },
      "mcp-server-chart": {
        "transport": "sse",
        "url": "https://mcp.api-inference.modelscope.net/06b0207b1f9b4c/sse"

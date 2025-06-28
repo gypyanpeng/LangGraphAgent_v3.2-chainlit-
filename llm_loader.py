@@ -4,9 +4,16 @@ import os
 from typing import Optional
 from langchain_openai import ChatOpenAI
 
+# 导入自定义 Ollama 适配器
+try:
+    from ollama_adapter import create_ollama_chat_model
+    OLLAMA_ADAPTER_AVAILABLE = True
+except ImportError:
+    OLLAMA_ADAPTER_AVAILABLE = False
+
 def load_llm_from_config(config_path: str = "config/llm_config.json", provider: Optional[str] = None):
     """
-    只用 openai/官方 provider 直连 LLM，不使用 litellm proxy。
+    加载 LLM 模型，支持多种提供商包括 Ollama 自定义适配器。
     支持多模型配置，provider 可选，默认加载 default_provider。
     默认配置文件路径为 config/llm_config.json。
     """
@@ -25,6 +32,7 @@ def load_llm_from_config(config_path: str = "config/llm_config.json", provider: 
         api_base = llm_conf.get("base_url")
         temperature = llm_conf.get("temperature", 0.7)
         streaming = llm_conf.get("streaming", True)
+        provider_type = llm_conf.get("provider", provider)
     else:
         llm_conf = config["llm"]
         model = llm_conf.get("model")
@@ -32,13 +40,29 @@ def load_llm_from_config(config_path: str = "config/llm_config.json", provider: 
         api_base = llm_conf.get("api_base")
         temperature = llm_conf.get("temperature", 0.7)
         streaming = llm_conf.get("streaming", True)
-    return ChatOpenAI(
-        model=model,
-        api_key=api_key,
-        base_url=api_base,
-        temperature=temperature,
-        streaming=streaming
-    )
+        provider_type = llm_conf.get("provider", "openai")
+
+    # 如果是 Ollama 提供商且自定义适配器可用，使用自定义适配器
+    if provider_type == "ollama" and OLLAMA_ADAPTER_AVAILABLE:
+        print(f"🔧 使用 Ollama 自定义适配器: {model}")
+        return create_ollama_chat_model(
+            model=model,
+            base_url=api_base,
+            temperature=temperature,
+            streaming=streaming
+        )
+    else:
+        # 使用标准 OpenAI 兼容接口
+        if provider_type == "ollama" and not OLLAMA_ADAPTER_AVAILABLE:
+            print("⚠️ Ollama 适配器不可用，尝试使用 OpenAI 兼容接口")
+
+        return ChatOpenAI(
+            model=model,
+            api_key=api_key,
+            base_url=api_base,
+            temperature=temperature,
+            streaming=streaming
+        )
 
 def list_available_models(config_path: str = "llm_config.json"):
     """

@@ -285,37 +285,58 @@ class SQLiteDataLayer(BaseDataLayer):
         return await asyncio.get_event_loop().run_in_executor(None, _get_user)
     
     async def create_thread(self, thread: ThreadDict) -> ThreadDict:
-        """创建线程"""
+        """创建线程 - 带重试逻辑处理UNIQUE约束冲突"""
+        import uuid
+
         logger.info(f"🔥 CREATE_THREAD 被调用！线程ID: {thread.get('id')}")
         logger.info(f"🔥 CREATE_THREAD 参数: {thread}")
 
-        def _create_thread():
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            try:
-                logger.info(f"🔥 正在插入线程到数据库: {thread['id']}")
-                cursor.execute("""
-                    INSERT INTO threads (id, createdAt, name, userId, userIdentifier, tags, metadata)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    thread["id"],
-                    thread.get("createdAt"),
-                    thread.get("name"),
-                    thread.get("userId"),
-                    thread.get("userIdentifier"),
-                    self._serialize_data(thread.get("tags", [])),
-                    self._serialize_data(thread.get("metadata", {}))
-                ))
-                conn.commit()
-                logger.info(f"✅ 线程创建成功: {thread['id']}")
-                return thread
-            except Exception as e:
-                logger.error(f"❌ 创建线程失败: {e}")
-                raise
-            finally:
-                conn.close()
+        def _create_thread_with_retry():
+            max_retries = 3
+            current_thread = thread.copy()
 
-        return await asyncio.get_event_loop().run_in_executor(None, _create_thread)
+            for attempt in range(max_retries):
+                conn = sqlite3.connect(self.db_path)
+                cursor = conn.cursor()
+                try:
+                    logger.info(f"🔥 正在插入线程到数据库: {current_thread['id']} (尝试 {attempt + 1}/{max_retries})")
+                    cursor.execute("""
+                        INSERT INTO threads (id, createdAt, name, userId, userIdentifier, tags, metadata)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        current_thread["id"],
+                        current_thread.get("createdAt"),
+                        current_thread.get("name"),
+                        current_thread.get("userId"),
+                        current_thread.get("userIdentifier"),
+                        self._serialize_data(current_thread.get("tags", [])),
+                        self._serialize_data(current_thread.get("metadata", {}))
+                    ))
+                    conn.commit()
+                    logger.info(f"✅ 线程创建成功: {current_thread['id']}")
+                    return current_thread
+                except sqlite3.IntegrityError as e:
+                    if "UNIQUE constraint failed" in str(e) and attempt < max_retries - 1:
+                        # 生成新的线程ID并重试
+                        old_id = current_thread["id"]
+                        new_id = f"{old_id}_{uuid.uuid4().hex[:4]}"
+                        current_thread["id"] = new_id
+                        logger.warning(f"⚠️ 线程ID冲突，重试使用新ID: {old_id} -> {new_id}")
+                        conn.close()
+                        continue
+                    else:
+                        logger.error(f"❌ 创建线程失败 (UNIQUE约束): {e}")
+                        raise
+                except Exception as e:
+                    logger.error(f"❌ 创建线程失败: {e}")
+                    raise
+                finally:
+                    conn.close()
+
+            # 如果所有重试都失败了
+            raise Exception(f"创建线程失败：经过{max_retries}次重试仍然存在ID冲突")
+
+        return await asyncio.get_event_loop().run_in_executor(None, _create_thread_with_retry)
     
     async def get_thread(self, thread_id: str) -> Optional[ThreadDict]:
         """获取线程（包含完整的步骤和元素）"""

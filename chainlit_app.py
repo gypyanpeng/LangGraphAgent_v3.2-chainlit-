@@ -6,11 +6,69 @@ Chainlit Web 前端集成 - 符合官方最佳实践，支持历史会话恢复
 import os
 import asyncio
 import logging
-from typing import Optional
+from typing import Optional, Dict, Any, List
+import json
+from datetime import datetime
 
 # 配置详细日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+
+async def restore_langgraph_context(app, thread_id: str, steps: List[Dict[str, Any]]):
+    """
+    恢复LangGraph的对话上下文，确保Agent能够记住历史对话
+    """
+    try:
+        logger.info(f"🔄 开始恢复LangGraph上下文，线程ID: {thread_id}")
+
+        # 构建历史消息列表
+        messages = []
+        for step in steps:
+            step_type = step.get("type", "")
+            step_output = step.get("output", "")
+            step_name = step.get("name", "")
+
+            # 跳过系统消息和运行步骤
+            if step_type in ["run", "system"] or not step_output:
+                continue
+
+            # 根据步骤类型构建消息
+            if step_type == "user_message" or step_name in ["用户", "admin"]:
+                messages.append({
+                    "role": "user",
+                    "content": step_output
+                })
+            elif step_type == "assistant_message" or step_name in ["助手", "LangGraph Agent"]:
+                # 跳过系统启动消息
+                if "LangGraph Agent 已启动" in step_output or "会话已恢复" in step_output:
+                    continue
+                messages.append({
+                    "role": "assistant",
+                    "content": step_output
+                })
+
+        # 如果有历史消息，将其加载到LangGraph状态中
+        if messages:
+            logger.info(f"📝 恢复 {len(messages)} 条历史消息到LangGraph状态")
+
+            # 构建初始状态，包含历史消息
+            initial_state = {
+                "messages": messages,
+                "thread_id": thread_id,
+                "restored": True
+            }
+
+            # 将状态存储到用户会话中，供后续使用
+            cl.user_session.set("restored_state", initial_state)
+            cl.user_session.set("thread_id", thread_id)
+
+            logger.info(f"✅ LangGraph上下文恢复完成")
+        else:
+            logger.info(f"📝 没有找到可恢复的历史消息")
+
+    except Exception as e:
+        logger.error(f"❌ 恢复LangGraph上下文失败: {str(e)}")
 
 
 async def generate_thread_name(message_content: str) -> str:
@@ -106,21 +164,14 @@ def get_data_layer():
 # 配置简单的密码身份验证
 @cl.password_auth_callback
 async def auth_callback(username: str, password: str):
-    """简单的密码身份验证 - 带详细调试日志"""
+    """简单的密码身份验证 - 只支持admin账号"""
     logger.info(f"🔐 AUTH_CALLBACK 被调用！用户名: {username}")
 
-    # 简单的用户验证（生产环境请使用更安全的方式）
+    # 只允许admin账号登录（生产环境请使用更安全的方式）
     if username == "admin" and password == "admin123":
         user = cl.User(
             identifier="admin",
             display_name="管理员"
-        )
-        logger.info(f"✅ 身份验证成功！用户: {user.identifier}, 显示名: {user.display_name}")
-        return user
-    elif username == "user" and password == "user123":
-        user = cl.User(
-            identifier="user",
-            display_name="用户"
         )
         logger.info(f"✅ 身份验证成功！用户: {user.identifier}, 显示名: {user.display_name}")
         return user
@@ -237,62 +288,12 @@ async def on_chat_resume(thread: ThreadDict):
         steps = full_thread.get("steps", [])
         logger.info(f"📜 找到 {len(steps)} 条历史消息")
 
-        # 重新显示历史消息
-        displayed_count = 0
-        for step in steps:
-            step_type = step.get("type", "")
-            step_output = step.get("output", "")
-            step_name = step.get("name", "")
+        # 恢复LangGraph的对话状态以保持上下文记忆
+        await restore_langgraph_context(app, thread_id, steps)
 
-            # 跳过会话恢复消息，避免重复显示
-            if "会话已恢复" in step_output or "已加载" in step_output:
-                continue
-
-            # 跳过系统消息和运行步骤
-            if step_type in ["run", "system"]:
-                continue
-
-            # 使用 output 字段作为消息内容，如果为空则使用 name
-            content = step_output if step_output else step_name
-            if not content or content.strip() == "":
-                continue
-
-            # 根据 step_type 和 step_name 判断消息类型
-            # 优先根据 name 字段判断，因为 type 字段可能不准确
-            is_user_message = False
-            is_assistant_message = False
-
-            if step_name in ["用户", "admin"]:
-                # 根据 name 字段判断是用户消息
-                is_user_message = True
-            elif step_name in ["助手", "LangGraph Agent"]:
-                # 根据 name 字段判断是助手消息
-                is_assistant_message = True
-            elif step_type == "user_message":
-                is_user_message = True
-            elif step_type == "assistant_message":
-                is_assistant_message = True
-
-            # 显示消息
-            if is_user_message:
-                await cl.Message(
-                    content=content,
-                    author="用户"
-                ).send()
-                displayed_count += 1
-                logger.info(f"📤 显示用户消息: {content[:50]}...")
-            elif is_assistant_message:
-                await cl.Message(
-                    content=content,
-                    author="助手"
-                ).send()
-                displayed_count += 1
-                logger.info(f"📤 显示助手消息: {content[:50]}...")
-
-        # 发送恢复会话的提示消息
-        await cl.Message(
-            content=f"🔄 **会话已恢复！**\n\n已加载 {displayed_count} 条历史消息。您可以继续之前的对话。"
-        ).send()
+        # Chainlit会自动从数据库加载历史消息，我们不需要手动重新发送
+        # 只需要确保数据层正确配置即可
+        logger.info(f"📜 会话恢复完成，Chainlit将自动显示 {len(steps)} 条历史消息，上下文已恢复")
 
     except Exception as e:
         logger.error(f"❌ 恢复会话失败: {str(e)}")
@@ -343,9 +344,56 @@ async def on_message(message: cl.Message):
     final_answer = cl.Message(content="")
     
     try:
+        # 获取数据层实例
+        data_layer = cl.user_session.get("data_layer")
+        if not data_layer:
+            from sqlite_data_layer import SQLiteDataLayer
+            data_layer = SQLiteDataLayer()
+            cl.user_session.set("data_layer", data_layer)
+
+        # 手动保存用户消息到数据库
+        import uuid
+        from datetime import datetime, timezone
+
+        user_step_id = str(uuid.uuid4())
+        user_step = {
+            "id": user_step_id,
+            "name": current_user.identifier,
+            "type": "user_message",
+            "threadId": session_id,
+            "output": message.content,
+            "createdAt": datetime.now(timezone.utc).isoformat(),
+            "metadata": {},
+            "tags": []
+        }
+        await data_layer.create_step(user_step)
+        logger.info(f"💾 用户消息已保存: {message.content[:50]}...")
+
+        # 构建消息列表，包含恢复的历史上下文
+        messages_to_send = []
+
+        # 检查是否有恢复的状态
+        restored_state = cl.user_session.get("restored_state")
+        if restored_state and restored_state.get("restored"):
+            # 将历史消息转换为LangGraph格式
+            for msg in restored_state.get("messages", []):
+                if msg["role"] == "user":
+                    messages_to_send.append(HumanMessage(content=msg["content"]))
+                elif msg["role"] == "assistant":
+                    messages_to_send.append(AIMessage(content=msg["content"]))
+
+            # 清除恢复状态标记，避免重复使用
+            restored_state["restored"] = False
+            cl.user_session.set("restored_state", restored_state)
+            logger.info(f"📝 已包含 {len(messages_to_send)} 条历史消息到上下文中")
+
+        # 添加当前用户消息
+        messages_to_send.append(HumanMessage(content=message.content))
+
         # 使用 LangGraph 的流式输出 - 符合官方文档建议
+        ai_response_content = ""
         async for msg_obj, metadata in app.astream(
-            {"messages": [HumanMessage(content=message.content)]},
+            {"messages": messages_to_send},
             stream_mode="messages",
             config={**config, "callbacks": [cb]}
         ):
@@ -356,10 +404,27 @@ async def on_message(message: cl.Message):
                 and not isinstance(msg_obj, HumanMessage)
                 and metadata.get("langgraph_node") != "tools"  # 排除工具调用的中间输出
             ):
+                ai_response_content += msg_obj.content
                 await final_answer.stream_token(msg_obj.content)
-        
+
         # 发送最终消息
         await final_answer.send()
+
+        # 手动保存AI回复到数据库
+        if ai_response_content.strip():
+            ai_step_id = str(uuid.uuid4())
+            ai_step = {
+                "id": ai_step_id,
+                "name": "LangGraph Agent",
+                "type": "assistant_message",
+                "threadId": session_id,
+                "output": ai_response_content,
+                "createdAt": datetime.now(timezone.utc).isoformat(),
+                "metadata": {},
+                "tags": []
+            }
+            await data_layer.create_step(ai_step)
+            logger.info(f"💾 AI回复已保存: {ai_response_content[:50]}...")
 
         # 检查是否需要更新线程名称（仅在第一条消息后）
         await update_thread_name_if_needed(session_id, message.content, current_user)

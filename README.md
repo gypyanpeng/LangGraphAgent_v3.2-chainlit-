@@ -31,7 +31,7 @@
   - ✅ 前端可点击访问历史会话
   - ✅ GraphQL 风格分页支持
 - 🛠️ **丰富工具集成**：30+ MCP 工具，包括搜索、图表、推理等
-- 🔧 **多模型支持**：支持阿里云、ModelScope、OpenAI 等多种 LLM
+- 🔧 **多模型支持**：支持智谱AI、ModelScope、Ollama（自定义适配器）、OpenAI 等多种 LLM
 - 🔄 **会话管理**：支持多会话隔离，可以清除上下文记忆
 - 🏷️ **智能命名**：基于首条消息自动生成有意义的会话标题
 - 🗑️ **会话删除**：支持从前端界面删除不需要的历史会话
@@ -76,12 +76,12 @@ uv run chainlit run chainlit_app.py
 ### 🔐 身份验证和历史会话功能
 
 Web 界面现在支持：
-- **用户身份验证**：使用密码登录（默认密码：`admin`）
+- **管理员身份验证**：使用admin账号登录（用户名：`admin`，密码：`admin123`）
 - **历史会话查看**：在左侧面板查看所有历史对话
 - **智能会话命名**：基于首条消息自动生成有意义的标题，告别"未命名对话"
 - **一键切换会话**：点击历史会话即可恢复对话上下文
 - **会话删除功能**：支持删除不需要的历史会话，保持界面整洁
-- **多用户支持**：每个用户的会话完全隔离
+- **安全访问控制**：只允许管理员账号访问系统
 
 ## 🆕 最新功能更新 (2025-06-28)
 
@@ -173,7 +173,9 @@ uv run python main.py
 
 ### 3. 访问 Web 界面
 - 打开浏览器访问: http://localhost:8000
-- 使用密码登录: `admin123`
+- 使用管理员账号登录：
+  - 用户名：`admin`
+  - 密码：`admin123`
 - 开始与 LangGraph Agent 对话
 
 ## 🔧 故障排除
@@ -599,6 +601,71 @@ uv run python tests/test_persistence_complete.py
 - 用户权限和数据隔离
 - 数据库操作的原子性和一致性
 - 错误处理和异常恢复
+
+## 🔧 项目迁移问题解决方案
+
+### 问题描述
+当项目从其他电脑拷贝过来时，可能会遇到以下启动错误：
+1. **数据库约束冲突**：`UNIQUE constraint failed: threads.id`
+2. **npm包版本问题**：`No matching version found for tavily-mcp@0.2.4`
+3. **TaskGroup异常**：`unhandled errors in a TaskGroup (1 sub-exception)`
+
+### 解决方案
+
+#### 1. 修复npm包版本问题 ✅ 已解决
+**问题原因**：配置文件中指定的tavily-mcp版本0.2.4不存在
+**解决方案**：
+```bash
+# 检查可用版本
+npm view tavily-mcp versions --json
+
+# 修改 config/mcp_config.json 中的版本号
+# 将 "tavily-mcp@0.2.4" 改为 "tavily-mcp@0.2.3"
+```
+
+#### 2. 修复数据库约束冲突 ✅ 已解决
+**问题原因**：多个用户同时访问时可能生成相同的session ID
+**解决方案**：
+- 在 `sqlite_data_layer.py` 的 `create_thread` 方法中添加了重试逻辑
+- 当遇到UNIQUE约束冲突时，自动生成新的线程ID并重试
+- 最大重试次数为3次，确保系统稳定性
+
+#### 3. 清理数据库冲突数据
+**使用清理脚本**：
+```bash
+# 检查数据库冲突
+python tests/check_database_conflicts.py
+
+# 修复数据库冲突
+python tests/fix_database_conflicts.py
+```
+
+### 项目迁移注意事项
+
+#### 环境准备
+1. **确保Python版本**：需要Python 3.11+
+2. **安装uv包管理器**：
+   ```bash
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
+3. **安装依赖**：
+   ```bash
+   uv sync
+   ```
+
+#### 配置检查
+1. **检查配置文件**：确保 `config/` 目录下的配置文件完整
+2. **检查数据目录**：确保 `data/` 目录存在且有写权限
+3. **检查端口占用**：如果8000端口被占用，使用其他端口
+
+#### 启动验证
+```bash
+# 启动Web界面
+uv run chainlit run chainlit_app.py --port 8001
+
+# 启动CLI界面
+uv run python main.py
+```
 
 ## 🚀 下一步计划
 

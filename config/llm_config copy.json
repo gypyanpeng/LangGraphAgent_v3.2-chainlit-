@@ -14,13 +14,6 @@
       "model_name": "Qwen/Qwen3-32B",
       "description": "ModelScope Qwen 模型"
     },
-    "openai": {
-      "provider": "openai",
-      "api_key": "sk-111111111111111111111111111111111",
-      "base_url": "https://api.openai.com/v1",
-      "model_name": "gpt-3.5-turbo",
-      "description": "OpenAI GPT-3.5 模型"
-    },
     "ollama": {
       "provider": "ollama",
       "api_key": "ollama",
@@ -29,5 +22,5 @@
       "description": "本地 Ollama 模型"
     }
   },
-  "default_provider": "ollama"
+  "default_provider": "modelscope"
 }
