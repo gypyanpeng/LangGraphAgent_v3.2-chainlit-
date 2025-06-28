@@ -197,7 +197,7 @@ async def on_chat_start():
 @cl.on_chat_resume
 async def on_chat_resume(thread: ThreadDict):
     """
-    恢复历史会话 - 按照 Chainlit 官方文档实现
+    恢复历史会话 - 重新显示历史消息
     """
     try:
         # 检查用户身份验证状态
@@ -218,12 +218,80 @@ async def on_chat_resume(thread: ThreadDict):
         cl.user_session.set("tools", tools)
         cl.user_session.set("session_manager", session_manager)
 
-        # 获取历史消息数量
-        message_count = len(thread.get("steps", []))
+        # 获取完整的线程信息（包含历史消息）
+        data_layer = cl.user_session.get("data_layer")
+        if not data_layer:
+            # 如果没有数据层，创建一个新的
+            from sqlite_data_layer import SQLiteDataLayer
+            data_layer = SQLiteDataLayer()
+            cl.user_session.set("data_layer", data_layer)
+
+        # 获取完整的线程数据（包含步骤）
+        full_thread = await data_layer.get_thread(thread_id)
+        if not full_thread:
+            logger.warning(f"⚠️ 无法获取线程数据: {thread_id}")
+            await cl.Message(content="⚠️ 无法加载历史会话数据").send()
+            return
+
+        # 获取历史步骤
+        steps = full_thread.get("steps", [])
+        logger.info(f"📜 找到 {len(steps)} 条历史消息")
+
+        # 重新显示历史消息
+        displayed_count = 0
+        for step in steps:
+            step_type = step.get("type", "")
+            step_output = step.get("output", "")
+            step_name = step.get("name", "")
+
+            # 跳过会话恢复消息，避免重复显示
+            if "会话已恢复" in step_output or "已加载" in step_output:
+                continue
+
+            # 跳过系统消息和运行步骤
+            if step_type in ["run", "system"]:
+                continue
+
+            # 使用 output 字段作为消息内容，如果为空则使用 name
+            content = step_output if step_output else step_name
+            if not content or content.strip() == "":
+                continue
+
+            # 根据 step_type 和 step_name 判断消息类型
+            # 优先根据 name 字段判断，因为 type 字段可能不准确
+            is_user_message = False
+            is_assistant_message = False
+
+            if step_name in ["用户", "admin"]:
+                # 根据 name 字段判断是用户消息
+                is_user_message = True
+            elif step_name in ["助手", "LangGraph Agent"]:
+                # 根据 name 字段判断是助手消息
+                is_assistant_message = True
+            elif step_type == "user_message":
+                is_user_message = True
+            elif step_type == "assistant_message":
+                is_assistant_message = True
+
+            # 显示消息
+            if is_user_message:
+                await cl.Message(
+                    content=content,
+                    author="用户"
+                ).send()
+                displayed_count += 1
+                logger.info(f"📤 显示用户消息: {content[:50]}...")
+            elif is_assistant_message:
+                await cl.Message(
+                    content=content,
+                    author="助手"
+                ).send()
+                displayed_count += 1
+                logger.info(f"📤 显示助手消息: {content[:50]}...")
 
         # 发送恢复会话的提示消息
         await cl.Message(
-            content=f"🔄 **会话已恢复！**\n\n已加载 {message_count} 条历史消息。您可以继续之前的对话。"
+            content=f"🔄 **会话已恢复！**\n\n已加载 {displayed_count} 条历史消息。您可以继续之前的对话。"
         ).send()
 
     except Exception as e:

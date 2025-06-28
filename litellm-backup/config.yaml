@@ -1,9 +1,0 @@
-general_settings:
-  api_keys: ["12345"]
-model_list:
-  - model_name: GLM-4-Flash
-    litellm_params:
-      provider: zhipu
-      model: zhipu/glm-4-flash
-      api_base: https://open.bigmodel.cn/api/paas/v4/
-      api_key: "6c248cafe25a4f86a30af29b452313ff.Qg5UxwrJw0Ajy722"

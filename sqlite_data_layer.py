@@ -318,27 +318,106 @@ class SQLiteDataLayer(BaseDataLayer):
         return await asyncio.get_event_loop().run_in_executor(None, _create_thread)
     
     async def get_thread(self, thread_id: str) -> Optional[ThreadDict]:
-        """获取线程"""
+        """获取线程（包含完整的步骤和元素）"""
         def _get_thread():
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             try:
+                # 获取线程基本信息
                 cursor.execute("SELECT * FROM threads WHERE id = ?", (thread_id,))
                 row = cursor.fetchone()
-                if row:
-                    return {
-                        "id": row[0],
-                        "createdAt": row[1],
-                        "name": row[2],
-                        "userId": row[3],
-                        "userIdentifier": row[4],
-                        "tags": self._deserialize_data(row[5]) or [],
-                        "metadata": self._deserialize_data(row[6]) or {}
+
+                # 如果线程不在 threads 表中，检查是否有步骤数据
+                if not row:
+                    cursor.execute("SELECT COUNT(*) FROM steps WHERE threadId = ?", (thread_id,))
+                    step_count = cursor.fetchone()[0]
+
+                    if step_count == 0:
+                        return None
+
+                    # 如果有步骤数据但没有线程记录，创建一个默认的线程信息
+                    row = (thread_id, None, "历史对话", None, "admin", "[]", "{}")
+
+                # 获取线程的所有步骤（按正确的列顺序）
+                cursor.execute("""
+                    SELECT id, name, type, threadId, parentId, disableFeedback, streaming,
+                           waitForAnswer, isError, metadata, tags, input, output, createdAt,
+                           start, end, generation, showInput, language, indent, defaultOpen, command
+                    FROM steps WHERE threadId = ? ORDER BY createdAt ASC
+                """, (thread_id,))
+                step_rows = cursor.fetchall()
+
+                steps = []
+                for step_row in step_rows:
+                    step = {
+                        "id": step_row[0],
+                        "name": step_row[1],
+                        "type": step_row[2],
+                        "threadId": step_row[3],
+                        "parentId": step_row[4],
+                        "disableFeedback": bool(step_row[5]),
+                        "streaming": bool(step_row[6]),
+                        "waitForAnswer": bool(step_row[7]),
+                        "isError": bool(step_row[8]),
+                        "metadata": self._deserialize_data(step_row[9]),
+                        "tags": self._deserialize_data(step_row[10]),
+                        "input": step_row[11],
+                        "output": step_row[12],
+                        "createdAt": step_row[13],
+                        "start": step_row[14],
+                        "end": step_row[15],
+                        "generation": self._deserialize_data(step_row[16]),
+                        "showInput": step_row[17],
+                        "language": step_row[18],
+                        "indent": step_row[19] or 0,
+                        "defaultOpen": bool(step_row[20]),
+                        "command": step_row[21]
                     }
-                return None
+                    steps.append(step)
+
+                # 获取线程的所有元素（按正确的列顺序）
+                cursor.execute("""
+                    SELECT id, threadId, stepId, name, type, url, objectKey, size,
+                           page, language, forId, mime, chainlitKey, display, props
+                    FROM elements WHERE threadId = ?
+                """, (thread_id,))
+                element_rows = cursor.fetchall()
+
+                elements = []
+                for element_row in element_rows:
+                    element = {
+                        "id": element_row[0],
+                        "threadId": element_row[1],
+                        "stepId": element_row[2],
+                        "name": element_row[3],
+                        "type": element_row[4],
+                        "url": element_row[5],
+                        "objectKey": element_row[6],
+                        "size": element_row[7],
+                        "page": element_row[8],
+                        "language": element_row[9],
+                        "forId": element_row[10],
+                        "mime": element_row[11],
+                        "chainlitKey": element_row[12],
+                        "display": element_row[13],
+                        "props": self._deserialize_data(element_row[14])
+                    }
+                    elements.append(element)
+
+                return {
+                    "id": row[0],
+                    "createdAt": row[1],
+                    "name": row[2],
+                    "userId": row[3],
+                    "userIdentifier": row[4],
+                    "tags": self._deserialize_data(row[5]) or [],
+                    "metadata": self._deserialize_data(row[6]) or {},
+                    "steps": steps,
+                    "elements": elements
+                }
             finally:
                 conn.close()
-        
+
         return await asyncio.get_event_loop().run_in_executor(None, _get_thread)
     
     async def update_thread(self, thread_id: str, name: Optional[str] = None, 

@@ -11,20 +11,6 @@
 - 🔄 **会话管理**：支持多会话隔离，可以清除上下文记忆
 - 📊 **实时交互**：流式输出，实时查看 AI 思考过程
 
-## 🚀 快速开始
-
-### 1. 安装依赖
-
-```bash
-uv sync
-```
-
-### 2. 运行程序
-
-```bash
-uv run python main.py
-```
-
 ## 🏗️ 技术架构
 
 ### LangGraph 官方标准实现
@@ -136,27 +122,6 @@ async for output in app.astream(inputs, config=config):
     # 处理输出
 ```
 
-### 🤖 多智能体系统架构
-
-本项目正在升级为多智能体协作系统，采用 LangGraph 官方推荐的监督者模式：
-
-#### 核心组件
-- **监督者智能体**：任务分析和协调
-- **搜索专家**：信息检索和网络搜索
-- **分析专家**：逻辑推理和复杂思考
-- **图表专家**：数据可视化和图表生成
-- **代码专家**：代码编写和技术实现
-- **浏览器专家**：网页自动化操作
-- **文档专家**：文档生成和知识管理
-
-#### 工作流程
-1. 用户输入问题
-2. 监督者分析任务类型
-3. 智能路由到合适的专家
-4. 专家执行具体任务
-5. 监督者整合结果
-6. 返回最终答案
-
 ### 会话管理
 ```python
 class SimpleSessionManager:
@@ -202,22 +167,6 @@ class SimpleSessionManager:
   4. 🤖 基于最新的信息，我为您分析人工智能的发展趋势...
 ```
 
-## 🧪 测试
-
-项目包含完整的系统集成测试，验证所有核心功能：
-
-```bash
-# 运行系统集成测试
-uv run python tests/test_system_integration.py
-```
-
-测试覆盖：
-- ✅ 配置加载测试
-- ✅ 检查点存储器测试
-- ✅ 基本功能测试
-- ✅ 持久化功能测试
-- ✅ 会话管理测试
-
 ## 🛠️ 开发指南
 
 ### 添加新的 MCP 工具
@@ -243,21 +192,6 @@ uv run python tests/test_system_integration.py
 - **支持异步操作和流式输出**
 - **完整的错误处理和日志记录**
 
-## 📚 文档
-
-### 🎯 多智能体系统文档
-- [**多智能体系统详细调用报告和实施计划**](docs/多智能体系统详细调用报告和实施计划.md) - 完整的多智能体实施方案
-- [**多智能体系统实施指南**](docs/多智能体系统实施指南.md) - 项目小白快速上手指南
-- [**项目实施时间表和里程碑**](docs/项目实施时间表和里程碑.md) - 详细的8周实施计划
-- [LangGraph 多智能体协作集成计划](docs/LangGraph_MultiAgent_Collaboration_Integration_Plan.md) - 技术深度分析
-
-### 📖 技术文档
-- [实施路线图](docs/Implementation_Roadmap.md) - 详细的功能实施计划
-- [LangGraph 研究报告](docs/LangGraph_Research_Report.md) - 深度技术分析
-- [模型提供商分析](docs/Model_Provider_Analysis.md) - 多模型支持方案
-- [会话管理指南](docs/SESSION_MANAGEMENT_GUIDE.md) - 会话和记忆管理
-- [WoodenFish 分析报告](docs/WoodenFish_Analysis_Report.md) - 最佳实践借鉴
-
 ## 📈 项目优势
 
 1. **生产级可靠性**：参考成熟项目 WoodenFish 的最佳实践
@@ -277,7 +211,3 @@ uv run python tests/test_system_integration.py
 - **Week 7-8**：测试和部署
 
 详细计划请参考 [项目实施时间表和里程碑](docs/项目实施时间表和里程碑.md)
-
-## 📄 许可证
-
-MIT License
